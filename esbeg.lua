@@ -946,7 +946,7 @@ package.preload['markdown'] = function()
     local function cleanup(text)
         -- Standardize line endings
         text = text:gsub("\r\n", "\n") -- DOS to UNIX
-        text = text:gsub("\r", "\n") -- Mac to UNIX
+        text = text:gsub("\r", "\n")   -- Mac to UNIX
 
         -- Convert all tabs to spaces
         text = detab(text)
@@ -1218,7 +1218,7 @@ Other options:
             local s = read_file(path, "input")
             s = run(s, options)
             local file = io.open(outpath(path, options), "w") or
-            error("Could not open output file: " .. outpath(path, options))
+                error("Could not open output file: " .. outpath(path, options))
             file:write(s)
             file:close()
             run_stdin = false
@@ -1287,6 +1287,7 @@ local input_array = {}
 
 for line in input:gmatch("[^\r\n]*") do
     local key, value = line:match("^%@%@%@(.-)%=(.-)$")
+    local title = line:match("^%#([^#].*)$")
     if key then
         key = trim(key) ---@type string
         local splitted = split(value, ";")
@@ -1295,14 +1296,11 @@ for line in input:gmatch("[^\r\n]*") do
             table.insert(val, trim(splitted[i]))
         end
         metadata[key] = val
+    elseif not metadata.title and title then
+        metadata.title = { trim(title) }
+    elseif title then
     else
-        if not metadata.title then
-            local title = line:match("^%#([^#].*)$")
-            if title then
-                metadata.title = { trim(title) }
-            end
-        end
-        table.insert(input_array, line)
+        table.insert(input_array, (line:gsub("^%#(%#+)", "%1")))
     end
 end
 
@@ -1310,10 +1308,15 @@ input = table.concat(input_array, '\n')
 
 metadata.body = { markdown(input) }
 
-local output = template:gsub("%<%@%s*(.-)%s*%=%>%s*(.-)%s*%@%>",
+local output = template:gsub("%<%@%s*(.-)%s*%=%>%s*(.-)%s*%@(.-)%>",
     ---@param varname string
     ---@param expression string
-    function(varname, expression)
+    ---@param delimiter string
+    function(varname, expression, delimiter)
+        if varname:sub(-1, -1) == '?' then
+            varname = varname:sub(1, -2)
+            return (metadata[varname] and #metadata[varname] > 0) and expression:gsub("%%", "%%%%") or ""
+        end
         local var = metadata[varname]
         if var then
             local ret = {}
@@ -1322,7 +1325,7 @@ local output = template:gsub("%<%@%s*(.-)%s*%=%>%s*(.-)%s*%@%>",
                 local replaced = expression:gsub("%$%$", escaped)
                 table.insert(ret, replaced)
             end
-            return table.concat(ret)
+            return table.concat(ret, delimiter)
         else
             return ""
         end
