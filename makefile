@@ -1,27 +1,17 @@
 lua := lua
 dir := posts/
-template := template.html
-search_template := template_search.html
+template := $(dir)template.html
+search_template := $(dir)template_search.js
 
 sources := $(wildcard $(dir)*/index.md)
 outputs := $(sources:%.md=%.html)
 indices := $(sources:%.md=%.json)
 
-ifeq ($(OS),Windows_NT)
-NULL_DEV := NUL
-else
-NULL_DEV := /dev/null
-endif
+all: $(dir)post_index.js
 
-all: index.json
-
-index.json: $(indices)
+$(dir)post_index.js: $(indices)
 	@echo MERGING
-	@echo "local args = {...} for i=1,#args do local file = io.open(args[i], 'r') args[i] = file:read('*a'):gsub('[' .. string.char(10, 13) .. ']', '') file:close() end io.write('# [' .. table.concat(args, ',') .. ']')" | $(lua) - $^ > $@
-	@cat $@ > index.md
-	@$(lua) esbeg.lua index.md $(dir)index.html $(search_template) > $(NULL_DEV)
-	@$(RM) index.json
-	@$(RM) index.md
+	@echo "local args = {...} for i=1,#args do local file = io.open(args[i], 'r') args[i] = file:read('*a'):gsub('[' .. string.char(10, 13) .. ']', '') file:close() end io.write('const __INDEX__ = [' .. table.concat(args, ',') .. ']')" | $(lua) - $^ > $@
 
 $(dir)%.json: $(dir)%.md $(template)
 	@echo COMPILING $<
