@@ -17,7 +17,7 @@ do
     template_file:close()
 end
 
-local metadata = {}
+local metadata = { path = args[2] }
 
 ---@param s string
 ---@return string
@@ -85,3 +85,30 @@ do
     output_file:write(output)
     output_file:close()
 end
+
+local EXCLUDED_FIELDS = {['body'] = true}
+
+local function jsonify(value)
+    if type(value) == 'table' then
+        local ret = {}
+        if #value > 0 then
+            for i=1,#value do
+                table.insert(ret, jsonify(value[i]))
+            end
+            return '[' .. table.concat(ret, ',') .. ']'
+        else
+            for k,v in pairs(value) do
+                if not EXCLUDED_FIELDS[k] then
+                    assert(type(k) == 'string', "Cannot jsonify non-string keys")
+                    table.insert(ret, ("%q: %s"):format(k, jsonify(v)))
+                end
+            end
+            return '{' .. table.concat(ret, ',') .. '}'
+        end
+    elseif type(value) == 'string' then return ("%q"):format(value)
+    elseif type(value) == 'nil' then return "null"
+    else return tostring(value)
+    end
+end
+
+io.write(jsonify(metadata))
