@@ -52,7 +52,7 @@ for line in input:gmatch("[^\r\n]*") do
         if not metadata.title then
             local title = line:match("^%#([^#].*)$")
             if title then
-                metadata.title = {trim(title)}
+                metadata.title = { trim(title) }
             end
         end
         table.insert(input_array, line)
@@ -63,35 +63,23 @@ input = table.concat(input_array, '\n')
 
 metadata.body = { markdown(input) }
 
-local output = template:gsub("%$%@([%s%S]-)%@%$",
+local output = template:gsub("%<%$%s*(.-)%s*%=%>%s*(.-)%s*%$%>",
+    ---@param varname string
     ---@param expression string
-    function(expression)
-        local parts = split(expression, ":") ---@type {[1]: string, [2]: string?, [3]: string?}
-        local before, center, after = "", "", ""
-        if #parts == 1 then
-            center = trim(parts[1]):gsub("%%", "%%%%")
-        elseif #parts == 3 then
-            before = trim(parts[1]):gsub("%%", "%%%%")
-            center = trim(parts[2]):gsub("%%", "%%%%")
-            after = trim(parts[3]):gsub("%%", "%%%%")
+    function(varname, expression)
+        local var = metadata[varname]
+        if var then
+            local ret = {}
+            for i = 1, #var do
+                local escaped = var[i]:gsub("%%", "%%%%")
+                local replaced = expression:gsub("%@%@", escaped)
+                table.insert(ret, replaced)
+            end
+            return table.concat(ret)
         else
-            error(("Variable has %d parts. Only 1 part and 3 parts are supported"):format(#parts))
+            return ""
         end
-        local varname = center:match("^%$(.-)%$$")
-        local var = metadata[varname] or {}
-        local ret = {}
-
-        for i = 1, #var do
-            local key = "%$" .. varname .. "%$"
-            local value = tostring(var[i]):gsub("%%", "%%%%")
-            local pushed = ("%s%s%s"):format(before, center, after)
-
-            table.insert(ret, (pushed:gsub(key, value)))
-        end
-
-        return table.concat(ret)
     end)
-
 do
     local output_file = assert(io.open(args[2], "w"))
     output_file:write(output)
