@@ -1,4 +1,5 @@
 lua := lua
+converter := esbeg.lua
 dir := posts/
 template := $(dir)template.html
 index_name := $(dir)post_index.js
@@ -13,6 +14,6 @@ $(index_name): $(indices)
 	@echo MERGING
 	@echo "local args = {...} for i=1,#args do local file = io.open(args[i], 'r') args[i] = file:read('*a'):gsub('[' .. string.char(10, 13) .. ']', '') file:close() end io.write('const __INDEX__ = [' .. table.concat(args, ',') .. ']')" | $(lua) - $^ > $@
 
-$(dir)%.json: $(dir)%.md $(template)
+$(dir)%.json: $(dir)%.md $(template) $(converter)
 	@echo COMPILING $<
-	@$(lua) esbeg.lua $< $(patsubst %.md,%.html,$<) $(template) > $@
+	@$(lua) $(converter) $< $(patsubst %.md,%.html,$<) $(template) > $@

@@ -1308,28 +1308,40 @@ input = table.concat(input_array, '\n')
 
 metadata.body = { markdown(input) }
 
-local output = template:gsub("%<%@%s*(.-)%s*%=%>%s*(.-)%s*%@(.-)%>",
-    ---@param varname string
-    ---@param expression string
-    ---@param delimiter string
-    function(varname, expression, delimiter)
-        if varname:sub(-1, -1) == '?' then
-            varname = varname:sub(1, -2)
-            return (metadata[varname] and #metadata[varname] > 0) and expression:gsub("%%", "%%%%") or ""
-        end
-        local var = metadata[varname]
-        if var then
-            local ret = {}
-            for i = 1, #var do
-                local escaped = var[i]:gsub("%%", "%%%%")
-                local replaced = expression:gsub("%$%$", escaped)
-                table.insert(ret, replaced)
+local output =
+    template
+    :gsub("%<%#(.-)%#%>",
+        ---@param path string
+        ---@return string
+        function(path)
+            local file = assert(io.open(trim(path), "r"))
+            local data = file:read("*a")
+            file:close()
+            return data:gsub("%%", "%%%%")
+        end)
+    :gsub("%<%@%s*(.-)%s*%=%>%s*(.-)%s*%@(.-)%>",
+        ---@param varname string
+        ---@param expression string
+        ---@param delimiter string
+        ---@return string
+        function(varname, expression, delimiter)
+            if varname:sub(-1, -1) == '?' then
+                varname = varname:sub(1, -2)
+                return (metadata[varname] and #metadata[varname] > 0) and expression:gsub("%%", "%%%%") or ""
             end
-            return table.concat(ret, delimiter)
-        else
-            return ""
-        end
-    end)
+            local var = metadata[varname]
+            if var then
+                local ret = {}
+                for i = 1, #var do
+                    local escaped = var[i]:gsub("%%", "%%%%")
+                    local replaced = expression:gsub("%$%$", escaped)
+                    table.insert(ret, replaced)
+                end
+                return table.concat(ret, delimiter)
+            else
+                return ""
+            end
+        end)
 do
     local output_file = assert(io.open(args[2], "w"))
     output_file:write(output)
