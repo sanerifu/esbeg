@@ -31,7 +31,7 @@ function markdown.compile(input, handlers)
     handlers = handlers or {}
     handlers = setmetatable(handlers, Handler)
 
-    local state = nil ---@type string?
+    local state = {} ---@type string[]
 
     ---@param type string
     local function handler(type)
@@ -50,7 +50,7 @@ function markdown.compile(input, handlers)
         local header_matches ---@type integer
         -- Hack. Every escaped character is encoded as their ASCII values wrapped in two null characters
         line = line:gsub("%\\(.)", function(c) return '\0' .. tostring(string.byte(c)) .. '\0' end)
-        
+
         line, header_matches = line:gsub("^(%#+) (.*)", handler('header'))
         line = line:gsub("%*%*(.-)%*%*", handler('bold')):gsub("%_%_(.-)%_%_", handler('bold'))
         line = line:gsub("%*(.-)%*", handler('italic')):gsub("%_(.-)%_", handler('italic'))
@@ -59,17 +59,19 @@ function markdown.compile(input, handlers)
         -- before line processing begins
         line = line:gsub("%z(.-)%z", function(b) return string.char(tonumber(b)) end)
 
-        if state == nil and #line ~= 0 then
+        if #state == 0 and #line ~= 0 then
             if header_matches ~= 0 then
             else
-                state = "p"
+                table.insert(state, "p")
                 table.insert(ret, "<p>")
             end
         end
 
-        if state ~= nil and #line == 0 then
-            table.insert(ret, ("</%s>"):format(state))
-            state = nil
+        if #state > 0 and #line == 0 then
+            for i=#state,1,-1 do
+                table.insert(ret, ("</%s>"):format(state[i]))
+                table.remove(state, #state)
+            end
         end
 
         table.insert(ret, line)
