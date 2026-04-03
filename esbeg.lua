@@ -40,7 +40,7 @@ end
 
 local input_array = {}
 
-for line in input:gmatch("[^\r\n]*") do
+for line in input:gmatch("(.-)\n") do
     local key, value = line:match("^%@%@%@(.-)%=(.-)$")
     local title = line:match("^%#([^#].*)$")
     if key then

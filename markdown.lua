@@ -41,13 +41,22 @@ function markdown.compile(input, handlers)
     end
 
     local ret = {}
+    input = input:
+        gsub("^%s*(.+)%s*$", "%1\n\n"): -- Trim text and append empty line to denote termination
+        gsub("\n\n+", "\n\n"): -- Collapse empty newlines to single one
+        gsub("%z", "\0000\0") -- Encode null characters since null is used for escape
 
-    for line in input:gsub("^%s*(.+)%s*$", "%1"):gsub("\n\n+", "\n"):gmatch("[^\n]*") do
+    for line in input:gmatch("(.-)\n") do
         local header_matches ---@type integer
+        -- Hack. Every escaped character is encoded as their ASCII values wrapped in two null characters
         line = line:gsub("%\\(.)", function(c) return '\0' .. tostring(string.byte(c)) .. '\0' end)
+        
         line, header_matches = line:gsub("^(%#+) (.*)", handler('header'))
         line = line:gsub("%*%*(.-)%*%*", handler('bold')):gsub("%_%_(.-)%_%_", handler('bold'))
         line = line:gsub("%*(.-)%*", handler('italic')):gsub("%_(.-)%_", handler('italic'))
+
+        -- Decode escapes. This is safe since all null characters in the source string are encoded in this format
+        -- before line processing begins
         line = line:gsub("%z(.-)%z", function(b) return string.char(tonumber(b)) end)
 
         if state == nil and #line ~= 0 then
