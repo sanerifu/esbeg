@@ -1,69 +1,84 @@
 package.preload['markdown'] = function()
     local markdown = {}
 
+    ---@type Handler
+    local TextHandler
+
     ---@class Handler
-    local Handler = {}
+    local Handler = {
+        ---@param str string
+        ---@returns string
+        bold = function(str)
+            return "<b>" .. str .. "</b>"
+        end,
+
+        ---@param str string
+        ---@returns string
+        italic = function(str)
+            return "<em>" .. str .. "</em>"
+        end,
+
+        ---@param level_string string
+        ---@param str string
+        ---@returns string
+        header = function(level_string, str)
+            local level = #level_string
+            return ("<h%d>%s</h%d>"):format(level, str, level)
+        end,
+
+        ---@param label string
+        ---@param link string
+        ---@returns string
+        inlineImage = function(label, link)
+            return ("<img src=\"%s\" alt=\"%s\"/>"):format(link, markdown.compile(label, TextHandler):gsub("%b<>", ""):gsub("^%s*(.-)%s*$", "%1"))
+        end,
+
+        ---@param label string
+        ---@param link string
+        ---@returns string
+        blockImage = function(label, link)
+            return ("<figure><img src=\"%s\" alt=\"%s\"/><figcaption>%s</figcaption></figure>"):format(link, markdown.compile(label, TextHandler):gsub("%b<>", ""):gsub("^%s*(.-)%s*$", "%1"), label)
+        end,
+
+        ---@param label string
+        ---@param link string
+        ---@return string
+        link = function(label, link)
+            return ("<a href=\"%s\">%s</a>"):format(link, label)
+        end,
+
+        ---@param str string
+        ---@returns string
+        strikethrough = function(str)
+            return ("<s>%s</s>"):format(str)
+        end,
+
+        ---@param code string
+        ---@returns string
+        code = function(code)
+            return "<code>" .. code .. "</code>"
+        end,
+
+        ---@param type string
+        ---@param block string
+        ---@returns string
+        codeBlock = function(type, block)
+            return ("<code style=\"white-space: pre;\" type=\"%s\">%s</code>"):format(type, block)
+        end,
+    }
     Handler.__index = Handler
 
-    ---@param str string
-    ---@returns string
-    function Handler.bold(str)
-        return "<b>" .. str .. "</b>"
-    end
-
-    ---@param str string
-    ---@returns string
-    function Handler.italic(str)
-        return "<em>" .. str .. "</em>"
-    end
-
-    ---@param level_string string
-    ---@param str string
-    ---@returns string
-    function Handler.header(level_string, str)
-        local level = #level_string
-        return ("<h%d>%s</h%d>"):format(level, str, level)
-    end
-
-    ---@param label string
-    ---@param link string
-    ---@returns string
-    function Handler.inlineImage(label, link)
-        return ("<img src=\"%s\" alt=\"%s\"/>"):format(link, label:gsub("%b<>", ""))
-    end
-
-    ---@param label string
-    ---@param link string
-    ---@returns string
-    function Handler.blockImage(label, link)
-        return ("<figure><img src=\"%s\" alt=\"%s\"/><figcaption>%s</figcaption></figure>"):format(link, label, label)
-    end
-
-    ---@param label string
-    ---@param link string
-    ---@return string
-    function Handler.link(label, link)
-        return ("<a href=\"%s\">%s</a>"):format(link, label)
-    end
-
-    ---@param str string
-    ---@returns string
-    function Handler.strikethrough(str)
-        return ("<s>%s</s>"):format(str)
-    end
-
-    ---@param code string
-    ---@returns string
-    function Handler.code(code)
-        return "<code>" .. code .. "</code>"
-    end
-
-    ---@param type string
-    ---@param block string
-    ---@returns string
-    function Handler.codeBlock(type, block)
-        return ("<code style=\"white-space: pre;\" type=\"%s\">%s</code>"):format(type, block)
-    end
+    TextHandler = setmetatable({
+        bold = function(str) return str end,
+        italic = function(str) return str end,
+        header = function(level_string, str) return str end,
+        inlineImage = function(label, link) return label end,
+        blockImage = function(label, link) return label end,
+        link = function(label, link) return label end,
+        strikethrough = function(str) return str end,
+        code = function(code) return code end,
+        codeBlock = function(type, block) return block end,
+    }, Handler)
 
     --- Hack. Every escaped character is encoded as their ASCII values wrapped in two 1 characters
     ---@param str string
