@@ -128,8 +128,6 @@ package.preload['markdown'] = function()
         local ordered_list_start, ordered_list_close = handlers.orderedList()
         local ordered_list_element_start, ordered_list_element_close = handlers.orderedListElement()
 
-        io.stderr:write(("%q %q %q %q\n"):format(ordered_list_start, ordered_list_close, ordered_list_element_start, ordered_list_element_close))
-
         local ret = {}
         local function flush()
             for i = #state, 1, -1 do
