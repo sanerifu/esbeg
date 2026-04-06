@@ -30,14 +30,16 @@ package.preload['markdown'] = function()
         ---@param link string
         ---@returns string
         inlineImage = function(label, link)
-            return ("<img src=\"%s\" alt=\"%s\"/>"):format(link, markdown.compile(label, TextHandler):gsub("%b<>", ""):gsub("^%s*(.-)%s*$", "%1"))
+            return ("<img src=\"%s\" alt=\"%s\"/>"):format(link,
+                markdown.compile(label, TextHandler):gsub("%b<>", ""):gsub("^%s*(.-)%s*$", "%1"))
         end,
 
         ---@param label string
         ---@param link string
         ---@returns string
         blockImage = function(label, link)
-            return ("<figure><img src=\"%s\" alt=\"%s\"/><figcaption>%s</figcaption></figure>"):format(link, markdown.compile(label, TextHandler):gsub("%b<>", ""):gsub("^%s*(.-)%s*$", "%1"), label)
+            return ("<figure><img src=\"%s\" alt=\"%s\"/><figcaption>%s</figcaption></figure>"):format(link,
+                markdown.compile(label, TextHandler):gsub("%b<>", ""):gsub("^%s*(.-)%s*$", "%1"), label)
         end,
 
         ---@param label string
@@ -133,12 +135,17 @@ package.preload['markdown'] = function()
         for line in input:gmatch("(.-)\n") do
             local header_matches ---@type integer
             local image_matches ---@type integer
+            local olist_matches ---@type integer
             local code_matches ---@type integer?
+            local list_indent ---@type integer?
 
             line = escape(line, "\\(.)")
             line, header_matches = line:gsub("^(%#+) (.*)", handler('header'))
             line, image_matches = line:gsub("^%!(%b[])(%b())$",
                 function(label, link) return handler('blockImage')(label:sub(2, -2), link:sub(2, -2)) end)
+            line, olist_matches = line:gsub("^(%s*)%d+%.%s*", function(indent)
+                list_indent = #indent; return "<li>"
+            end)
             code_matches = line:find("^\002")
             line = line:gsub("`(.-)`", function(code) return handler('code')(escape(code, "(.)")) end)
             line = line:gsub("%!(%b[])(%b())",
@@ -162,11 +169,26 @@ package.preload['markdown'] = function()
                 flush()
             end
 
-            if #state == 0 and #line ~= 0 then
+            if #line ~= 0 then
                 if header_matches ~= 0 then
                 elseif image_matches ~= 0 then
+                elseif olist_matches ~= 0 then
+                    while #state ~= 0 and state[#state].tag == 'ol' and state[#state].indent > list_indent do
+                        -- io.stderr:write(("177: %q\n"):format(line))
+                        table.insert(ret, "</li>")
+                        table.insert(ret, ("</%s>"):format(state[#state].tag))
+                        table.remove(state, #state)
+                    end
+                    if #state == 0 or (state[#state].tag == 'ol' and state[#state].indent < list_indent) then
+                        -- io.stderr:write(("182: %q %d\n"):format(line, #state))
+                        table.insert(state, { tag = 'ol', indent = list_indent })
+                        table.insert(ret, "<ol>")
+                    elseif state[#state].tag == 'ol' and state[#state].indent == list_indent then
+                        -- io.stderr:write(("189: %q\n"):format(line))
+                        table.insert(ret, "</li>")
+                    end
                 elseif code_matches then
-                else
+                elseif #state == 0 then
                     table.insert(state, { tag = "p" })
                     table.insert(ret, "<p>")
                 end
