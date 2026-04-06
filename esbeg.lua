@@ -7,20 +7,20 @@ package.preload['markdown'] = function()
     ---@class Handler
     local Handler = {
         ---@param str string
-        ---@returns string
+        ---@return string
         bold = function(str)
             return "<b>" .. str .. "</b>"
         end,
 
         ---@param str string
-        ---@returns string
+        ---@return string
         italic = function(str)
             return "<em>" .. str .. "</em>"
         end,
 
         ---@param level_string string
         ---@param str string
-        ---@returns string
+        ---@return string
         header = function(level_string, str)
             local level = #level_string
             return ("<h%d>%s</h%d>"):format(level, str, level)
@@ -28,7 +28,7 @@ package.preload['markdown'] = function()
 
         ---@param label string
         ---@param link string
-        ---@returns string
+        ---@return string
         inlineImage = function(label, link)
             return ("<img src=\"%s\" alt=\"%s\"/>"):format(link,
                 markdown.compile(label, TextHandler):gsub("%b<>", ""):gsub("^%s*(.-)%s*$", "%1"))
@@ -36,7 +36,7 @@ package.preload['markdown'] = function()
 
         ---@param label string
         ---@param link string
-        ---@returns string
+        ---@return string
         blockImage = function(label, link)
             return ("<figure><img src=\"%s\" alt=\"%s\"/><figcaption>%s</figcaption></figure>"):format(link,
                 markdown.compile(label, TextHandler):gsub("%b<>", ""):gsub("^%s*(.-)%s*$", "%1"), label)
@@ -50,22 +50,34 @@ package.preload['markdown'] = function()
         end,
 
         ---@param str string
-        ---@returns string
+        ---@return string
         strikethrough = function(str)
             return ("<s>%s</s>"):format(str)
         end,
 
         ---@param code string
-        ---@returns string
+        ---@return string
         code = function(code)
             return "<code>" .. code .. "</code>"
         end,
 
         ---@param type string
         ---@param block string
-        ---@returns string
+        ---@return string
         codeBlock = function(type, block)
             return ("<code style=\"white-space: pre;\" type=\"%s\">%s</code>"):format(type, block)
+        end,
+
+        ---@return string start
+        ---@return string closingTag
+        orderedList = function()
+            return "<ol>", "ol"
+        end,
+
+        ---@return string start
+        ---@return string closingTag
+        orderedListElement = function()
+            return "<li>", "li"
         end,
     }
     Handler.__index = Handler
@@ -80,13 +92,15 @@ package.preload['markdown'] = function()
         strikethrough = function(str) return str end,
         code = function(code) return code end,
         codeBlock = function(type, block) return block end,
+        orderedList = function() return "", "" end,
+        orderedListElement = function() return "", "" end,
     }, Handler)
 
     --- Hack. Every escaped character is encoded as their ASCII values wrapped in two 1 characters
     ---@param str string
     ---@param pattern string
     ---@param escape_character string?
-    ---@returns string
+    ---@return string
     local function escape(str, pattern, escape_character)
         escape_character = escape_character or '\001'
         return str:gsub(pattern, function(c) return escape_character .. tostring(string.byte(c)) .. escape_character end)
@@ -97,7 +111,7 @@ package.preload['markdown'] = function()
 
     ---@param input string
     ---@param handlers Handler?
-    ---@returns string
+    ---@return string
     function markdown.compile(input, handlers)
         handlers = handlers or {}
         handlers = setmetatable(handlers, Handler)
@@ -111,10 +125,18 @@ package.preload['markdown'] = function()
             end
         end
 
+        local ordered_list_start, ordered_list_close = handlers.orderedList()
+        local ordered_list_element_start, ordered_list_element_close = handlers.orderedListElement()
+
+        io.stderr:write(("%q %q %q %q\n"):format(ordered_list_start, ordered_list_close, ordered_list_element_start, ordered_list_element_close))
+
         local ret = {}
         local function flush()
             for i = #state, 1, -1 do
                 if state[i].tag then
+                    if state[i].tag == ordered_list_close then
+                        table.insert(ret, ("</%s>"):format(ordered_list_element_close))
+                    end
                     table.insert(ret, ("</%s>"):format(state[i].tag))
                 end
                 table.remove(state, #state)
@@ -144,7 +166,8 @@ package.preload['markdown'] = function()
             line, image_matches = line:gsub("^%!(%b[])(%b())$",
                 function(label, link) return handler('blockImage')(label:sub(2, -2), link:sub(2, -2)) end)
             line, olist_matches = line:gsub("^(%s*)%d+%.%s*", function(indent)
-                list_indent = #indent; return "<li>"
+                list_indent = #indent
+                return ordered_list_element_start
             end)
             code_matches = line:find("^\002")
             line = line:gsub("`(.-)`", function(code) return handler('code')(escape(code, "(.)")) end)
@@ -173,19 +196,19 @@ package.preload['markdown'] = function()
                 if header_matches ~= 0 then
                 elseif image_matches ~= 0 then
                 elseif olist_matches ~= 0 then
-                    while #state ~= 0 and state[#state].tag == 'ol' and state[#state].indent > list_indent do
+                    while #state ~= 0 and state[#state].tag == ordered_list_close and state[#state].indent > list_indent do
                         -- io.stderr:write(("177: %q\n"):format(line))
-                        table.insert(ret, "</li>")
+                        table.insert(ret, ("</%s>"):format(ordered_list_element_close))
                         table.insert(ret, ("</%s>"):format(state[#state].tag))
                         table.remove(state, #state)
                     end
-                    if #state == 0 or (state[#state].tag == 'ol' and state[#state].indent < list_indent) then
+                    if #state == 0 or (state[#state].tag == ordered_list_close and state[#state].indent < list_indent) then
                         -- io.stderr:write(("182: %q %d\n"):format(line, #state))
-                        table.insert(state, { tag = 'ol', indent = list_indent })
-                        table.insert(ret, "<ol>")
-                    elseif state[#state].tag == 'ol' and state[#state].indent == list_indent then
+                        table.insert(state, { tag = ordered_list_close, indent = list_indent })
+                        table.insert(ret, ordered_list_start)
+                    elseif state[#state].tag == ordered_list_close and state[#state].indent == list_indent then
                         -- io.stderr:write(("189: %q\n"):format(line))
-                        table.insert(ret, "</li>")
+                        table.insert(ret, ("</%s>"):format(ordered_list_element_close))
                     end
                 elseif code_matches then
                 elseif #state == 0 then
