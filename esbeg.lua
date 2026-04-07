@@ -6,6 +6,12 @@ package.preload['markdown'] = function()
 
     ---@class Handler
     local Handler = {
+        ---@return string start
+        ---@return string closingTag
+        paragraph = function()
+            return "<p>", "</p>"
+        end,
+
         ---@param str string
         ---@return string
         bold = function(str)
@@ -83,6 +89,7 @@ package.preload['markdown'] = function()
     Handler.__index = Handler
 
     TextHandler = setmetatable({
+        paragraph = function() return "", "" end,
         bold = function(str) return str end,
         italic = function(str) return str end,
         header = function(level_string, str) return str end,
@@ -130,6 +137,7 @@ package.preload['markdown'] = function()
 
         local ordered_list_start, ordered_list_close = handlers.orderedList()
         local ordered_list_element_start, ordered_list_element_close = handlers.orderedListElement()
+        local paragraph_start, paragraph_close = handlers.paragraph()
 
         local ret = {}
         local function flush()
@@ -213,8 +221,8 @@ package.preload['markdown'] = function()
                     end
                 elseif code_matches then
                 elseif #state == 0 then
-                    table.insert(state, { tag = "</p>" })
-                    table.insert(ret, "<p>")
+                    table.insert(state, { tag = paragraph_close })
+                    table.insert(ret, paragraph_start)
                 end
             end
 
