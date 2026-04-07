@@ -85,6 +85,18 @@ package.preload['markdown'] = function()
         orderedListElement = function()
             return "<li>", "</li>"
         end,
+
+        ---@return string start
+        ---@return string closingTag
+        unorderedList = function()
+            return "<ul>", "</ul>"
+        end,
+
+        ---@return string start
+        ---@return string closingTag
+        unorderedListElement = function()
+            return "<li>", "</li>"
+        end,
     }
     Handler.__index = Handler
 
@@ -136,7 +148,9 @@ package.preload['markdown'] = function()
         end
 
         local ordered_list_start, ordered_list_close = handlers.orderedList()
-        local ordered_list_element_start, ordered_list_element_close = handlers.orderedListElement()
+        local ordered_list_element_start, ordered_list_element_close = handlers.unorderedListElement()
+        local unordered_list_start, unordered_list_close = handlers.unorderedList()
+        local unordered_list_element_start, unordered_list_element_close = handlers.unorderedListElement()
         local paragraph_start, paragraph_close = handlers.paragraph()
 
         local ret = {}
@@ -167,6 +181,7 @@ package.preload['markdown'] = function()
             local header_matches ---@type integer
             local image_matches ---@type integer
             local olist_matches ---@type integer
+            local ulist_matches ---@type integer
             local code_matches ---@type integer?
             local list_indent ---@type integer?
 
@@ -177,6 +192,10 @@ package.preload['markdown'] = function()
             line, olist_matches = line:gsub("^(%s*)%d+%.%s*", function(indent)
                 list_indent = #indent
                 return ordered_list_element_start
+            end)
+            line, ulist_matches = line:gsub("^(%s*)%-%s+", function(indent)
+                list_indent = #indent
+                return unordered_list_element_start
             end)
             code_matches = line:find("^\002")
             line = line:gsub("`(.-)`", function(code) return handler('code')(escape(code, "(.)")) end)
@@ -205,19 +224,29 @@ package.preload['markdown'] = function()
                 if header_matches ~= 0 then
                 elseif image_matches ~= 0 then
                 elseif olist_matches ~= 0 then
-                    while #state ~= 0 and state[#state].tag == ordered_list_close and state[#state].indent > list_indent do
-                        -- io.stderr:write(("177: %q\n"):format(line))
+                    while #state ~= 0 and (state[#state].tag == unordered_list_close or state[#state].tag == ordered_list_close) and state[#state].indent > list_indent do
                         table.insert(ret, ordered_list_element_close)
                         table.insert(ret, state[#state].tag)
                         table.remove(state, #state)
                     end
-                    if #state == 0 or (state[#state].tag == ordered_list_close and state[#state].indent < list_indent) then
-                        -- io.stderr:write(("182: %q %d\n"):format(line, #state))
+                    if #state == 0 or ((state[#state].tag == ordered_list_close or state[#state].tag == unordered_list_close) and state[#state].indent < list_indent) then
                         table.insert(state, { tag = ordered_list_close, indent = list_indent })
                         table.insert(ret, ordered_list_start)
-                    elseif state[#state].tag == ordered_list_close and state[#state].indent == list_indent then
-                        -- io.stderr:write(("189: %q\n"):format(line))
+                    elseif (state[#state].tag == unordered_list_close or state[#state].tag == ordered_list_close) and state[#state].indent == list_indent then
                         table.insert(ret, ordered_list_element_close)
+                    end
+                elseif ulist_matches ~= 0 then
+                    while #state ~= 0 and (state[#state].tag == unordered_list_close or state[#state].tag == ordered_list_close) and state[#state].indent > list_indent do
+                        table.insert(ret, unordered_list_element_close)
+                        table.insert(ret, state[#state].tag)
+                        table.remove(state, #state)
+                    end
+                    io.stderr:write(("%q %q %q\n"):format(line, state[#state].indent, list_indent))
+                    if #state == 0 or ((state[#state].tag == unordered_list_close or state[#state].tag == ordered_list_close) and state[#state].indent < list_indent) then
+                        table.insert(state, { tag = unordered_list_close, indent = list_indent })
+                        table.insert(ret, unordered_list_start)
+                    elseif (state[#state].tag == unordered_list_close or state[#state].tag == ordered_list_close) and state[#state].indent == list_indent then
+                        table.insert(ret, unordered_list_element_close)
                     end
                 elseif code_matches then
                 elseif #state == 0 then
