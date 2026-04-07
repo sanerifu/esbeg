@@ -71,13 +71,13 @@ package.preload['markdown'] = function()
         ---@return string start
         ---@return string closingTag
         orderedList = function()
-            return "<ol>", "ol"
+            return "<ol>", "</ol>"
         end,
 
         ---@return string start
         ---@return string closingTag
         orderedListElement = function()
-            return "<li>", "li"
+            return "<li>", "</li>"
         end,
     }
     Handler.__index = Handler
@@ -95,6 +95,9 @@ package.preload['markdown'] = function()
         orderedList = function() return "", "" end,
         orderedListElement = function() return "", "" end,
     }, Handler)
+
+    markdown.TextHandler = TextHandler
+    markdown.DefaultHandler = Handler
 
     --- Hack. Every escaped character is encoded as their ASCII values wrapped in two 1 characters
     ---@param str string
@@ -133,9 +136,9 @@ package.preload['markdown'] = function()
             for i = #state, 1, -1 do
                 if state[i].tag then
                     if state[i].tag == ordered_list_close then
-                        table.insert(ret, ("</%s>"):format(ordered_list_element_close))
+                        table.insert(ret, ordered_list_element_close)
                     end
-                    table.insert(ret, ("</%s>"):format(state[i].tag))
+                    table.insert(ret, state[i].tag)
                 end
                 table.remove(state, #state)
             end
@@ -196,8 +199,8 @@ package.preload['markdown'] = function()
                 elseif olist_matches ~= 0 then
                     while #state ~= 0 and state[#state].tag == ordered_list_close and state[#state].indent > list_indent do
                         -- io.stderr:write(("177: %q\n"):format(line))
-                        table.insert(ret, ("</%s>"):format(ordered_list_element_close))
-                        table.insert(ret, ("</%s>"):format(state[#state].tag))
+                        table.insert(ret, ordered_list_element_close)
+                        table.insert(ret, state[#state].tag)
                         table.remove(state, #state)
                     end
                     if #state == 0 or (state[#state].tag == ordered_list_close and state[#state].indent < list_indent) then
@@ -206,11 +209,11 @@ package.preload['markdown'] = function()
                         table.insert(ret, ordered_list_start)
                     elseif state[#state].tag == ordered_list_close and state[#state].indent == list_indent then
                         -- io.stderr:write(("189: %q\n"):format(line))
-                        table.insert(ret, ("</%s>"):format(ordered_list_element_close))
+                        table.insert(ret, ordered_list_element_close)
                     end
                 elseif code_matches then
                 elseif #state == 0 then
-                    table.insert(state, { tag = "p" })
+                    table.insert(state, { tag = "</p>" })
                     table.insert(ret, "<p>")
                 end
             end
@@ -228,7 +231,7 @@ package.preload['markdown'] = function()
     return markdown
 end
 
-local markdown = require('markdown').compile
+local markdown = require('markdown')
 
 local args = { ... }
 
@@ -289,7 +292,7 @@ end
 
 input = table.concat(input_array, '\n')
 
-metadata.body = { markdown(input) }
+metadata.body = { markdown.compile(input, markdown.DefaultHandler) }
 
 local output =
     template
