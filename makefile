@@ -1,19 +1,24 @@
-lua := lua
+lua := $(shell command -v luajit 2>/dev/null || echo lua)
 converter := esbeg.lua
-dir := posts/
-template := $(dir)template.html
-index_name := $(dir)post_index.js
+site := ./
 
-sources := $(wildcard $(dir)*/index.md)
+sources := $(sort $(wildcard $(site)posts/*/index.md))
+to_be_compiled_sources := $(sources) $(site)index.md $(site)about/index.md
+to_be_compiled := $(to_be_compiled_sources:%.md=%.html)
 outputs := $(sources:%.md=%.html)
-indices := $(sources:%.md=%.json)
+indices := $(sources:%.md=%.index)
+feeds := $(sources:%.md=%.rss)
 
-all: $(index_name)
+all: $(site)posts/index.html $(to_be_compiled)
 
-$(index_name): $(indices)
+
+$(site)templates/post.html: $(site)templates/menubar.html
+
+$(site)posts/index.html: $(site)templates/posts.html $(outputs) 
 	@echo MERGING
-	@echo "local args = {...} for i=1,#args do local file = io.open(args[i], 'r') args[i] = file:read('*a'):gsub('[' .. string.char(10, 13) .. ']', '') file:close() end io.write('const __INDEX__ = [' .. table.concat(args, ',') .. ']')" | $(lua) - $^ > $@
+	@$(lua) $(converter) replace $(site)posts/index.html $(site)templates/posts.html $(indices)
+	@$(lua) $(converter) replace $(site)rss.xml $(site)templates/rss.xml $(feeds)
 
-$(dir)%.json: $(dir)%.md $(template) $(converter)
+%.html: %.md $(site)templates/post.html $(converter)
 	@echo COMPILING $<
-	@$(lua) $(converter) $< $(patsubst %.md,%.html,$<) $(template) > $@
+	@$(lua) $(converter) compile $(patsubst %.md,%.html,$<) $(patsubst %.md,%.index,$<) $(patsubst %.md,%.rss,$<) $< $(site)templates/post.html $(site)

@@ -1,6 +1,16 @@
 package.preload['markdown'] = function()
     local markdown = {}
 
+    --- Hack. Every escaped character is encoded as their ASCII values wrapped in two 1 characters
+    ---@param str string
+    ---@param pattern string
+    ---@param escape_character string?
+    ---@return string
+    local function escape(str, pattern, escape_character)
+        escape_character = escape_character or '\001'
+        return (str:gsub(pattern, function(c) return escape_character .. tostring(string.byte(c)) .. escape_character end))
+    end
+
     ---@type Handler
     local TextHandler
 
@@ -64,14 +74,14 @@ package.preload['markdown'] = function()
         ---@param code string
         ---@return string
         code = function(code)
-            return "<code>" .. code .. "</code>"
+            return "<code class=\"inline-code\">" .. code .. "</code>"
         end,
 
         ---@param type string
         ---@param block string
         ---@return string
         codeBlock = function(type, block)
-            return ("<code style=\"white-space: pre;\" type=\"%s\">%s</code>"):format(type, block)
+            return ("<code class=\"block-code\" type=\"%s\">%s</code>"):format(type, block)
         end,
 
         ---@return string start
@@ -113,20 +123,12 @@ package.preload['markdown'] = function()
         codeBlock = function(type, block) return block end,
         orderedList = function() return "", "" end,
         orderedListElement = function() return "", "" end,
+        unorderedList = function() return "", "" end,
+        unorderedListElement = function() return "", "" end,
     }, Handler)
 
     markdown.TextHandler = TextHandler
     markdown.DefaultHandler = Handler
-
-    --- Hack. Every escaped character is encoded as their ASCII values wrapped in two 1 characters
-    ---@param str string
-    ---@param pattern string
-    ---@param escape_character string?
-    ---@return string
-    local function escape(str, pattern, escape_character)
-        escape_character = escape_character or '\001'
-        return str:gsub(pattern, function(c) return escape_character .. tostring(string.byte(c)) .. escape_character end)
-    end
 
     ---@class State
     ---@field tag string
@@ -143,7 +145,7 @@ package.preload['markdown'] = function()
         ---@param type string
         local function handler(type)
             return function(...)
-                return handlers[type](...):gsub("%%", "%%%%%")
+                return handlers[type](...):gsub("%%", "%%%%")
             end
         end
 
@@ -169,7 +171,10 @@ package.preload['markdown'] = function()
         input = escape(
             input:
             gsub("```(.-)\n(.-)```",
-                function(type, block) return ("%s"):format(escape(handler('codeBlock')(type, block), "(.)", '\002')) end)
+                function(type, block)
+                    return ("%s"):format(escape(
+                        handler('codeBlock')(type, block:gsub("%<", "&lt;"):gsub("%>", "&gt;")), "(.)", '\002'))
+                end)
             :
             gsub("^%s*(.+)%s*$", "%1\n\n"): -- Trim text and append empty line to denote termination
             gsub("\n\n+", "\n\n")           -- Collapse empty newlines to single one
@@ -198,7 +203,8 @@ package.preload['markdown'] = function()
                 return unordered_list_element_start
             end)
             code_matches = line:find("^\002")
-            line = line:gsub("`(.-)`", function(code) return handler('code')(escape(code, "(.)")) end)
+            line = line:gsub("`(.-)`",
+                function(code) return handler('code')(escape(code:gsub("%<", "&lt;"):gsub("%>", "&gt;"), "(.)")) end)
             line = line:gsub("%!(%b[])(%b())",
                 function(label, link) return handler('inlineImage')(label:sub(2, -2), link:sub(2, -2)) end)
             line = line:gsub("(%b[])(%b())",
@@ -272,22 +278,25 @@ local markdown = require('markdown')
 
 local args = { ... }
 
-local input
-local template
-
-do
-    local input_file = assert(io.open(args[1], "r"))
-    input = assert(input_file:read("*a")) ---@type string
-    input_file:close()
+---@param path string
+---@return string content
+local function readFile(path)
+    local file = assert(io.open(path, "r"))
+    local content = assert(file:read("*a")) ---@type string
+    file:close()
+    return content
 end
 
-do
-    local template_file = assert(io.open(args[3], "r"))
-    template = assert(template_file:read("*a")) ---@type string
-    template_file:close()
+---@param path string
+---@param content string?
+local function writeFile(path, content)
+    if content == nil then
+        return
+    end
+    local file = assert(io.open(path, "w"))
+    assert(file:write(content))
+    file:close()
 end
-
-local metadata = { path = args[2] }
 
 ---@param s string
 ---@return string
@@ -306,97 +315,248 @@ local function split(s, delimiter)
     return ret
 end
 
-local input_array = {}
-
-for line in input:gmatch("(.-)\n") do
-    local key, value = line:match("^%@%@%@(.-)%=(.-)$")
-    local title = line:match("^%#([^#].*)$")
-    if key then
-        key = trim(key) ---@type string
-        local splitted = split(value, ";")
-        local val = {}
-        for i = 1, #splitted do
-            table.insert(val, trim(splitted[i]))
-        end
-        metadata[key] = val
-    elseif not metadata.title and title then
-        metadata.title = { trim(title) }
-    elseif title then
+local loader = loadstring or load
+---@param expr string
+---@param env table
+---@param ... any
+local function eval(expr, env, ...)
+    local chunk = assert(loader("return " .. expr, "=eval"))
+    if setfenv then
+        setfenv(chunk, env)
     else
-        table.insert(input_array, (line:gsub("^%#(%#+)", "%1")))
+        debug.setupvalue(chunk, 1, env)
     end
+    local ret = chunk(...)
+    return ret
 end
 
-input = table.concat(input_array, '\n')
+local function metadataToHtml(template, metadata, metadata_context, root)
+    return
+        template
+        :gsub("%<include%s+path%s*%=%s*%\"(.-)%\"%s*%/?%>",
+            ---@param path string
+            ---@return string
+            function(path)
+                local file = assert(io.open(root .. trim(path), "r"))
+                local data = file:read("*a")
+                file:close()
+                return data:gsub("%%", "%%%%")
+            end)
+        :gsub("%<if%s+expression%s*%=%s*%\"(.-)%\"%s*%>(.-)%<%/if%>",
+            ---@param expression string
+            ---@param body string
+            function(expression, body)
+                return (eval(expression, metadata_context) and body or ""):gsub("%%", "%%%%")
+            end)
+        :gsub(
+            "%<replace%s+variable%s*%=%s*%\"(.-)%\"%s+placeholder%s*%=%s*%\"(.-)%\"(%s+delimiter%s*%=%s*%\"(.-)%\")%s*%>(.-)%<%/replace%>",
+            ---@param variable string
+            ---@param placeholder string
+            ---@param delimiter string
+            ---@param body string
+            function(variable, placeholder, _, delimiter, body)
+                local value = metadata[variable]
+                if not value then
+                    return ""
+                end
 
-metadata.body = { markdown.compile(input, markdown.DefaultHandler) }
-
-local output =
-    template
-    :gsub("%<%#(.-)%#%>",
-        ---@param path string
-        ---@return string
-        function(path)
-            local file = assert(io.open(trim(path), "r"))
-            local data = file:read("*a")
-            file:close()
-            return data:gsub("%%", "%%%%")
-        end)
-    :gsub("%<%@%s*(.-)%s*%=%>%s*(.-)%s*%@(.-)%>",
-        ---@param varname string
-        ---@param expression string
-        ---@param delimiter string
-        ---@return string
-        function(varname, expression, delimiter)
-            if varname:sub(-1, -1) == '?' then
-                varname = varname:sub(1, -2)
-                return (metadata[varname] and #metadata[varname] > 0) and expression:gsub("%%", "%%%%") or ""
-            end
-            local var = metadata[varname]
-            if var then
                 local ret = {}
-                for i = 1, #var do
-                    local escaped = var[i]:gsub("%%", "%%%%")
-                    local replaced = expression:gsub("%$%$", escaped)
+                for i = 1, #value do
+                    local escaped = value[i]:gsub("%%", "%%%%")
+                    local replaced = body:gsub(placeholder, escaped)
                     table.insert(ret, replaced)
                 end
-                return table.concat(ret, delimiter)
-            else
-                return ""
-            end
-        end)
-do
-    local output_file = assert(io.open(args[2], "w"))
-    output_file:write(output)
-    output_file:close()
+                ret = table.concat(ret, (delimiter:gsub("%%", "%%%%")))
+                return ret
+            end)
 end
 
-local EXCLUDED_FIELDS = { ['body'] = true }
-
-local function jsonify(value)
-    if type(value) == 'table' then
-        local ret = {}
-        if #value > 0 then
-            for i = 1, #value do
-                table.insert(ret, jsonify(value[i]))
-            end
-            return '[' .. table.concat(ret, ',') .. ']'
-        else
-            for k, v in pairs(value) do
-                if not EXCLUDED_FIELDS[k] then
-                    assert(type(k) == 'string', "Cannot jsonify non-string keys")
-                    table.insert(ret, ("%q: %s"):format(k, jsonify(v)))
-                end
-            end
-            return '{' .. table.concat(ret, ',') .. '}'
-        end
-    elseif type(value) == 'string' then
-        return ("%q"):format(value)
-    elseif type(value) == 'nil' then
-        return "null"
-    else
-        return tostring(value)
+local function metadataToIndex(metadata)
+    if metadata.title == nil or #metadata.title < 1 then
+        return nil
     end
+    return ([[            <li>
+                <a href="/%s" style="display: block;">%s</a>
+                <div>Tarih: %s</div>
+                <div>Yazan%s: %s</div>
+                <div>Etiketler: %s</div>
+            </li>
+
+]]):format(
+        metadata.path, metadata.title[1],
+        metadata.date and metadata.date[1] or "",
+        (metadata.authors and #metadata.authors > 1) and "lar" or "",
+        metadata.authors and table.concat(metadata.authors, "; "),
+        metadata.tags and table.concat(metadata.tags, "; ")
+    )
 end
 
-io.write(jsonify(metadata))
+local function metadataToRss(metadata)
+    if metadata.title == nil or #metadata.title < 1 then
+        return nil
+    end
+    local weekday_mapping = {
+        ["Pzt"] = "Mon",
+        ["Sal"] = "Tue",
+        ["Çrş"] = "Wed",
+        ["Prş"] = "Thu",
+        ["Cum"] = "Fri",
+        ["Cmt"] = "Sat",
+        ["Paz"] = "Sun",
+    }
+
+    local month_mapping = {
+        ["01"] = "Jan",
+        ["02"] = "Feb",
+        ["03"] = "Mar",
+        ["04"] = "Apr",
+        ["05"] = "May",
+        ["06"] = "Jun",
+        ["07"] = "Jul",
+        ["08"] = "Aug",
+        ["09"] = "Sep",
+        ["10"] = "Oct",
+        ["11"] = "Nov",
+        ["12"] = "Dec",
+    }
+
+    ---@param extendedIso string?
+    ---@return string?
+    local function makeRfc2822(extendedIso)
+        if not extendedIso then
+            return nil
+        end
+        local year, month, day, hour, minute, second, timezone, weekday = extendedIso:match(
+            "^(....)%-(..)%-(..) (..):(..):(..) (.....) (.+)$"
+        )
+
+        return ("%s, %d %s %d %s:%s:%s %s"):format(
+            weekday_mapping[weekday],
+            tonumber(day),
+            month_mapping[month],
+            tonumber(year),
+            hour,
+            minute,
+            second,
+            timezone
+        )
+    end
+
+    ---@param tag string
+    ---@param text string?
+    ---@return string
+    local function wrapInTags(tag, text)
+        if text then
+            return ("<%s>%s</%s>"):format(tag, text, tag)
+        else
+            return ""
+        end
+    end
+
+    ---@param text string
+    ---@param start integer
+    ---@param finish integer
+    ---@return string
+    local function utf8Slice(text, start, finish)
+        local t = {}
+        local i = 1
+        for c in text:gmatch("[\1-\127\194-\244][\128-\191]*") do
+            if start <= i and i <= finish then
+                table.insert(t, c)
+            end
+            i = i + 1
+        end
+        return table.concat(t, "")
+    end
+
+    return (
+        "    <item>\n" ..
+        "        %s\n" ..
+        "        %s\n" ..
+        "        %s\n" ..
+        "        %s\n" ..
+        "    </item>\n\n"
+    ):format(
+        wrapInTags("title", metadata.title and metadata.title[1] or nil),
+        wrapInTags("description",
+            metadata.plaintext[1] and (utf8Slice(metadata.plaintext[1], 1, 120) .. "...") or nil),
+        wrapInTags("link", metadata.path and ("https://sanerifu.github.io/" .. metadata.path) or nil),
+        wrapInTags("pubDate", makeRfc2822(metadata.date and metadata.date[1] or nil))
+    )
+end
+
+local commands = {
+    compile = function()
+        local output = {
+            html = args[1], ---@type string
+            index = args[2], ---@type string
+            rss = args[3], ---@type string
+        }
+        local input = {
+            markdown = readFile(args[4]),
+            template = readFile(args[5]),
+            root = args[6],
+        }
+
+        local metadata = { path = output.html:match("(.+)%/index.html"):gsub(input.root, "") }
+
+        local input_array = {}
+
+        for line in input.markdown:gmatch("(.-)\n") do
+            local key, value = line:match("^%@%@%@(.-)%=(.-)$")
+            local title = line:match("^%#([^#].*)$")
+            if key then
+                key = trim(key) ---@type string
+                local splitted = split(value, ";")
+                local val = {}
+                for i = 1, #splitted do
+                    table.insert(val, trim(splitted[i]))
+                end
+                metadata[key] = val
+            elseif not metadata.title and title then
+                metadata.title = { trim(title) }
+                metadata.page_title = { trim(title) }
+            elseif title then
+            else
+                table.insert(input_array, (line:gsub("^%#(%#+)", "%1")))
+            end
+        end
+
+        input.markdown = table.concat(input_array, '\n')
+
+        metadata.body = { markdown.compile(input.markdown, markdown.DefaultHandler) }
+        metadata.plaintext = { markdown.compile(input.markdown, markdown.TextHandler) }
+
+        local metadata_context = {} ---@type table<string, boolean | integer>
+        for k in pairs(metadata) do
+            metadata_context[k] = #metadata[k] > 0
+            metadata_context[k .. '_count'] = #metadata[k]
+        end
+
+        writeFile(output.html, metadataToHtml(input.template, metadata, metadata_context, input.root))
+        writeFile(output.index, metadataToIndex(metadata))
+        writeFile(output.rss, metadataToRss(metadata))
+    end,
+
+    replace = function()
+        local output = {
+            merged = table.remove(args, 1),
+        }
+        local input = {
+            template = table.remove(args, 1),
+            files = args,
+        }
+
+        local content = {}
+        for i = 1, #input.files do
+            table.insert(content, readFile(input.files[i]))
+        end
+        writeFile(
+            output.merged,
+            readFile(input.template):gsub("%@DATA%@", table.concat(content, "")):gsub("%@COUNT%@", tostring(#content))
+        )
+    end,
+}
+
+local command = table.remove(args, 1)
+commands[command]()
