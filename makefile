@@ -16,8 +16,8 @@ $(site)templates/post.html: $(site)templates/menubar.html
 
 $(site)posts/index.html: $(site)templates/posts.html $(outputs) 
 	@echo MERGING
-	@$(lua) $(converter) replace $(site)posts/index.html $(site)templates/posts.html $(indices)
-	@$(lua) $(converter) replace $(site)rss.xml $(site)templates/rss.xml $(feeds)
+	@$(lua) $(converter) replace $(site)posts/index.html $(site)templates/posts.html $(site) $(indices)
+	@$(lua) $(converter) replace $(site)rss.xml $(site)templates/rss.xml $(site) $(feeds)
 
 %.html: %.md $(site)templates/post.html $(converter)
 	@echo COMPILING $<

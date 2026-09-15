@@ -571,6 +571,7 @@ local commands = {
         }
         local input = {
             template = table.remove(args, 1),
+            root = table.remove(args, 1),
             files = args,
         }
 
@@ -580,7 +581,18 @@ local commands = {
         end
         writeFile(
             output.merged,
-            readFile(input.template):gsub("%@DATA%@", table.concat(content, "")):gsub("%@COUNT%@", tostring(#content))
+            readFile(input.template)
+            :gsub("%<include%s+path%s*%=%s*%\"(.-)%\"%s*%/?%>",
+                ---@param path string
+                ---@return string
+                function(path)
+                    local file = assert(io.open(input.root .. trim(path), "r"))
+                    local data = file:read("*a")
+                    file:close()
+                    return data:gsub("%%", "%%%%")
+                end)
+            :gsub("%@DATA%@", table.concat(content, ""))
+            :gsub("%@COUNT%@", tostring(#content))
         )
     end,
 }
