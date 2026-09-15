@@ -1,6 +1,12 @@
 package.preload['markdown'] = function()
     local markdown = {}
 
+    ---@param s string
+    ---@return string
+    local function trim(s)
+        return s:match("^%s*(.-)%s*$")
+    end
+
     --- Hack. Every escaped character is encoded as their ASCII values wrapped in two 1 characters
     ---@param str string
     ---@param pattern string
@@ -10,6 +16,22 @@ package.preload['markdown'] = function()
         escape_character = escape_character or '\001'
         return (str:gsub(pattern, function(c) return escape_character .. tostring(string.byte(c)) .. escape_character end))
     end
+
+    local char_map = {
+        ['ç'] = 'ch',
+        ['Ç'] = 'Ch',
+        ['ğ'] = 'g',
+        ['Ğ'] = 'G',
+        ['ı'] = 'i',
+        ['İ'] = 'I',
+        ['ö'] = 'o',
+        ['Ö'] = 'O',
+        ['ü'] = 'u',
+        ['Ü'] = 'U',
+        ['ş'] = 'sh',
+        ['Ş'] = 'Sh',
+        [' '] = '-',
+    }
 
     ---@type Handler
     local TextHandler
@@ -38,8 +60,13 @@ package.preload['markdown'] = function()
         ---@param str string
         ---@return string
         header = function(level_string, str)
+            local id = trim(markdown.compile(str, TextHandler))
+                :gsub("[\1-\127\194-\244][\128-\191]*", char_map)
+                :lower()
+
             local level = #level_string
-            return ("<h%d>%s</h%d>"):format(level, str, level)
+            return ("<h%d id=\"%s\">%s <a aria-hidden=\"true\" style=\"display: inline-block;\" href=\"#%s\">§</a></h%d>")
+                :format(level, id, str, id, level)
         end,
 
         ---@param label string
