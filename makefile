@@ -3,7 +3,7 @@ converter := esbeg.lua
 site := ./
 
 sources := $(sort $(wildcard $(site)posts/*/index.md))
-to_be_compiled_sources := $(sources) $(site)index.md $(site)about/index.md
+to_be_compiled_sources := $(sources) $(site)index.md $(site)about/index.md $(site)404.md
 to_be_compiled := $(to_be_compiled_sources:%.md=%.html)
 outputs := $(sources:%.md=%.html)
 indices := $(sources:%.md=%.index)

@@ -525,7 +525,7 @@ local commands = {
             root = args[6],
         }
 
-        local metadata = { path = output.html:match("(.+)%/index.html"):gsub(input.root, "") }
+        local metadata = { path = output.html:match("(.+)%/(.+).html"):gsub(input.root, "") }
 
         local input_array = {}
 
